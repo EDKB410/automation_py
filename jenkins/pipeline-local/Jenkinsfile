@@ -1,0 +1,125 @@
+pipeline {
+    
+    tools {
+        allure 'Allure Report'
+        xvfb 'XVFB'
+    }
+    
+    agent {
+        label 'linux'
+    }
+
+    stages {
+    
+        stage('Setup parameters') {
+            steps {
+                script { 
+                    properties([
+                        parameters([
+                            string(
+                                defaultValue: 'tests/test_pass.py', 
+                                name: 'TESTS', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: '--test-log-level=INFO --alluredir=artifacts/allure-results',
+                                name: 'PYTEST_ARGS', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: 'local', 
+                                name: 'EXECUTOR', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: 'http://opencart:8080', 
+                                name: 'BASE_URL', 
+                                trim: true
+                            ),
+                            /*
+                            string(
+                                defaultValue: 'chrome', 
+                                name: 'BROWSER', 
+                                trim: true
+                            ),
+                            */
+                            choice (
+                                name: 'BROWSER',
+                                choices: 'chrome\nfirefox\nopera\nedge',
+                                defaultValue: 'chrome'
+                            ),
+                            string(
+                                defaultValue: '', 
+                                name: 'BROWSER_VERSION', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: '1', 
+                                name: 'THREADS', 
+                                trim: true
+                            )
+                        ])
+                    ])
+                }
+            }
+        }
+    
+        stage('Checkout') {
+            steps {
+                git branch: 'hw_13', url: 'https://github.com/EDKB410/automation_py.git'
+            }
+        }
+        
+        stage('Environment setup') {
+            steps {
+                sh """#!/bin/bash
+                python3.9 -m venv .venv &&
+                    source .venv/bin/activate &&
+                    pip install pip -U
+                    pip install -r requirements.txt
+                rm -rf ./artifacts
+                mkdir -p artifacts
+                pushd environment/opencart
+                ./up.sh
+                popd
+                """
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                wrap([$class: 'Xvfb', additionalOptions: '', assignedLabels: '', autoDisplayName: true, debug: true, displayNameOffset: 0, installationName: 'XVFB', parallelBuild: true, screen: '1024x1080x24', timeout: 25]) {
+                    sh """#!/bin/bash
+                    source .venv/bin/activate
+                    ./run_tests_local.sh \
+                    --browser=${params.BROWSER} \
+                    --bversion=${params.BROWSER_VERSION} \
+                    --executor=${params.EXECUTOR} \
+                    --base-url=${params.BASE_URL} \
+                    -n ${params.THREADS} \
+                    ${params.TESTS}
+                    """
+                }
+            }
+        }
+
+        stage('Environment teardown') {
+            steps {
+                sh """#!/bin/bash
+                pushd environment/opencart
+                ./down.sh
+                popd
+                """
+            }
+        
+            post {
+                always {
+                    allure includeProperties: false, jdk: '', report: 'artifacts/allure-report', results: [[path: 'artifacts/allure-results']]
+                    archiveArtifacts artifacts: 'artifacts/*.log', allowEmptyArchive: 'true'
+                    archiveArtifacts artifacts: 'artifacts/screenshots/**/*.png', allowEmptyArchive: 'true'
+                    // cleanWs()
+                }
+            }
+        }
+    }
+}
