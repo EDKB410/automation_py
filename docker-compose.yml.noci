@@ -1,0 +1,111 @@
+version: '3'
+networks:
+  test_net:
+    external:
+      name: test_net
+
+services:
+  selenoid:
+    networks:
+      - test_net
+    image: aerokube/selenoid:latest-release
+    volumes:
+      - "/home/user/.aerokube/selenoid/:/etc/selenoid"
+      - "/home/user/.aerokube/selenoid/video:/opt/selenoid/video"
+      - "/home/user/.aerokube/selenoid/logs:/opt/selenoid/logs"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    environment:
+      - OVERRIDE_VIDEO_OUTPUT_DIR=/home/user/.aerokube/selenoid/video
+    command:
+      - -conf
+      - /etc/selenoid/browsers.json
+      - -video-output-dir
+      - /opt/selenoid/video
+      - -log-output-dir
+      - /opt/selenoid/logs
+      - -container-network
+      - test_net
+    ports:
+      - "4444:4444"
+
+#  selenoid-ui:
+#    image: "aerokube/selenoid-ui"
+#    networks:
+#      - test_net
+#    ports:
+#      - "8081:8080"
+#    command: ["--selenoid-uri", "http://selenoid:4444"]
+
+  mariadb:
+    image: docker.io/bitnami/mariadb:10.6
+    environment:
+      # ALLOW_EMPTY_PASSWORD is recommended only for development.
+      - ALLOW_EMPTY_PASSWORD=yes
+      - MARIADB_USER=bn_opencart
+      - MARIADB_DATABASE=bitnami_opencart
+    volumes:
+      - 'mariadb_data:/bitnami/mariadb'
+    networks:
+      - test_net
+    depends_on:
+      - selenoid
+
+  opencart:
+    image: docker.io/bitnami/opencart:3
+    ports:
+      - '8080:8080'
+      - '8443:8443'
+    environment:
+      - OPENCART_HOST=opencart:8080
+      - OPENCART_DATABASE_HOST=mariadb
+      - OPENCART_DATABASE_PORT_NUMBER=3306
+      - OPENCART_DATABASE_USER=bn_opencart
+      - OPENCART_DATABASE_NAME=bitnami_opencart
+      # ALLOW_EMPTY_PASSWORD is recommended only for development.
+      - ALLOW_EMPTY_PASSWORD=yes
+    volumes:
+      - 'opencart_data:/bitnami/opencart'
+      - 'opencart_storage_data:/bitnami/opencart_storage/'
+    depends_on:
+      - mariadb
+    networks:
+      - test_net
+
+  tests:
+      # image: tests
+      build:
+        context: .
+        dockerfile: Dockerfile
+      user: ${UID}:${GID}
+      entrypoint:
+        - ./wait-for-it.sh
+        - mariadb:3306
+        - -t
+        - "180"
+        - --
+        - ./wait-for-it.sh
+        - opencart:8080
+        - -t
+        - "180"
+        - --
+        - ./entrypoint_pytest.sh
+        - --headless
+        - --db-host=mariadb
+        - --base-url=http://opencart:8080
+        - --executor=selenoid
+        - --alluredir=artifacts/allure-results
+        - ${PYTEST_ARGS}
+      depends_on:
+        - opencart
+      volumes:
+        - './artifacts/:/app/artifacts/'
+      networks:
+        - test_net
+
+volumes:
+  mariadb_data:
+    driver: local
+  opencart_data:
+    driver: local
+  opencart_storage_data:
+    driver: local

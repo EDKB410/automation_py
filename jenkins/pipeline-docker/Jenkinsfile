@@ -1,0 +1,89 @@
+pipeline {
+    
+    tools {
+        allure 'Allure Report'
+    }
+    
+    agent {
+        label 'linux'
+    }
+
+    stages {
+    
+        stage('Setup parameters') {
+            steps {
+                script { 
+                    properties([
+                        parameters([
+                            string(
+                                defaultValue: 'tests/test_pass.py', 
+                                name: 'TESTS', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: """
+                                --test-log-level=INFO --headless --db-host=mariadb --alluredir=artifacts/allure-results
+                                """,
+                                name: 'PYTEST_ARGS', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: 'selenoid', 
+                                name: 'EXECUTOR', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: 'http://opencart:8080', 
+                                name: 'BASE_URL', 
+                                trim: true
+                            ),
+                            choice (
+                                name: 'BROWSER',
+                                choices: 'chrome\nfirefox',
+                                defaultValue: 'chrome'
+                            ),
+                            string(
+                                defaultValue: '', 
+                                name: 'BROWSER_VERSION', 
+                                trim: true
+                            ),
+                            string(
+                                defaultValue: '1', 
+                                name: 'THREADS', 
+                                trim: true
+                            )
+                        ])
+                    ])
+                }
+            }
+        }
+    
+    
+        stage('Tests') {
+            steps {
+                git branch: 'hw_13', url: 'https://github.com/EDKB410/automation_py.git'
+
+                sh """
+                ./run_tests_compose.sh \
+                --headless \
+                --browser=${params.BROWSER} \
+                --bversion=${params.BROWSER_VERSION} \
+                --executor=${params.EXECUTOR} \
+                --base-url=${params.BASE_URL} \
+                --db-host=mariadb \
+                --alluredir=artifacts/allure-results \
+                -n ${params.THREADS} \
+                ${params.TESTS}
+                """
+            }
+
+            post {
+                always {
+                    allure includeProperties: false, jdk: '', report: 'artifacts/allure-report', results: [[path: 'artifacts/allure-results']]
+                    archiveArtifacts artifacts: 'artifacts/*.log', allowEmptyArchive: 'true'
+                    archiveArtifacts artifacts: 'artifacts/screenshots/**/*.png', allowEmptyArchive: 'true'
+                }
+            }
+        }
+    }
+}
