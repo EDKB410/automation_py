@@ -126,7 +126,6 @@ def invalid_creds():
 
 @pytest.fixture(scope='session')
 def driver(request, options, _app_logger):
-
     logger = _init_logger('driver')
 
     browser = request.config.getoption('browser')
@@ -279,7 +278,6 @@ def db_product_random(db_connector: DB, product_random, _logger):
 
 @pytest.fixture
 def db_delete_product(db_connector: DB, _logger):
-
     yield
 
     _logger.info("deleting product")
@@ -356,7 +354,6 @@ def take_screenshot_allure(driver, nodeid):
 
 @pytest.fixture(scope="function", autouse=True)
 def fail_check(request, driver, _logger, screenshots_dir):
-
     yield
 
     if request.node.rep_setup.failed:
